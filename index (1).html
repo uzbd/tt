@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Text Cleaner</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='4 1.5 56 56'%3E%3Cg transform='translate(2 0)' fill='none' stroke='%2331A8FF' stroke-width='8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 13V38a8 8 0 0 0 8 8h2M39 13V38a8 8 0 0 0 8 8h1'/%3E%3Cpath d='M10 26H50'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+:root{--bg:#f4f3ef;--surface:#fff;--text:#171713;--muted:#6f6d66;--line:#dddcd4;--accent:#1d4ed8;--radius:18px}
+:root[data-theme="dark"]{--bg:#141412;--surface:#1e1e1b;--text:#f5f3ec;--muted:#aaa79e;--line:#37372f;--accent:#7aa2ff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:760px;margin:0 auto;padding:12px 16px 24px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+button,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.copy{min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:var(--accent);color:#fff;font-weight:700;font-size:15px}
+:root[data-theme="dark"] .copy{color:#141412}
+.copy:disabled{opacity:.45;cursor:not-allowed}
+.theme{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:18px;line-height:1}
+textarea{display:block;width:100%;margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);font-size:17px;line-height:1.6;resize:vertical}
+section{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;font-size:18px;font-weight:600}
+.row+.row{border-top:1px solid var(--line)}
+.row:first-child{padding-top:0}.row:last-child{padding-bottom:0}
+.sw{position:relative;flex:none;width:68px;height:44px;border-radius:999px;border:1px solid var(--line);background:var(--line);transition:background .15s}
+.sw::after{content:"";position:absolute;top:50%;left:4px;width:34px;height:34px;margin-top:-17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+.sw[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+.sw[aria-checked="true"]::after{left:28px}
+@media (prefers-reduced-motion:reduce){.sw,.sw::after{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <button class="copy" id="copy" disabled>Copy</button>
+    <button class="theme" id="theme" aria-label="Switch to dark mode">🌙</button>
+  </div>
+  <textarea id="input" rows="7" aria-label="Text to clean" placeholder="Paste text here"></textarea>
+  <textarea id="output" rows="7" aria-label="Cleaned text" readonly placeholder="Cleaned text appears here"></textarea>
+  <section aria-label="Cleaning settings">
+    <div class="row"><span id="l1">Remove dots</span><button class="sw" id="dots" role="switch" aria-checked="true" aria-labelledby="l1"></button></div>
+    <div class="row"><span id="l2">Remove hyphens</span><button class="sw" id="hyphens" role="switch" aria-checked="true" aria-labelledby="l2"></button></div>
+  </section>
+</main>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var input=$("input"),output=$("output"),copy=$("copy"),theme=$("theme"),dots=$("dots"),hyphens=$("hyphens");
+  var root=document.documentElement;
+
+  function clean(){
+    var t=input.value;
+    if(dots.getAttribute("aria-checked")==="true")t=t.replace(/\./g,"");
+    if(hyphens.getAttribute("aria-checked")==="true")t=t.replace(/[-\u2010\u2011]/g,"");
+    output.value=t;
+    copy.disabled=!t;
+  }
+  function toggle(btn){
+    btn.addEventListener("click",function(){
+      btn.setAttribute("aria-checked",btn.getAttribute("aria-checked")==="true"?"false":"true");
+      clean();
+    });
+  }
+  toggle(dots);toggle(hyphens);
+  input.addEventListener("input",clean);
+
+  copy.addEventListener("click",function(){
+    var done=function(){copy.textContent="Copied";setTimeout(function(){copy.textContent="Copy"},1500)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(output.value).then(done,function(){output.select();document.execCommand("copy");done()});
+    }else{output.select();document.execCommand("copy");done()}
+  });
+
+  function setTheme(t){
+    root.setAttribute("data-theme",t);
+    theme.textContent=t==="dark"?"☀️":"🌙";
+    theme.setAttribute("aria-label",t==="dark"?"Switch to light mode":"Switch to dark mode");
+    try{localStorage.setItem("theme",t)}catch(e){}
+  }
+  var saved=null;
+  try{saved=localStorage.getItem("theme")}catch(e){}
+  setTheme(saved||(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+  theme.addEventListener("click",function(){setTheme(root.getAttribute("data-theme")==="dark"?"light":"dark")});
+
+  clean();
+})();
+</script>
+</body>
+</html>
