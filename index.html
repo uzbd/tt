@@ -1,412 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><style data-metaai-safe-area>:root { scroll-padding-top: var(--safe-area-scroll-padding-top, 0px); }
-[data-safe-area-inset-root]::before {
-  background: inherit;
-  content: "";
-  height: var(--safe-area-inset-top, 0px);
-  inset: 0 0 auto;
-  pointer-events: none;
-  position: fixed;
-  z-index: 2147483647;
-}
-</style><script data-metaai-safe-area-runtime>// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Text Cleaner</title>
+<style>
+:root{--bg:#f4f3ef;--surface:#fff;--text:#171713;--muted:#6f6d66;--line:#dddcd4;--accent:#1d4ed8;--radius:18px}
+:root[data-theme="dark"]{--bg:#141412;--surface:#1e1e1b;--text:#f5f3ec;--muted:#aaa79e;--line:#37372f;--accent:#7aa2ff}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:ui-rounded,"SF Pro Rounded","Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:760px;margin:0 auto;padding:12px 16px 24px}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:12px}
+button,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.copy{min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:var(--accent);color:#fff;font-weight:700;font-size:15px}
+:root[data-theme="dark"] .copy{color:#141412}
+.copy:disabled{opacity:.45;cursor:not-allowed}
+.theme{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:18px;line-height:1}
+textarea{display:block;width:100%;margin-top:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);font-size:17px;line-height:1.6;resize:vertical}
+section{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 0;font-size:18px;font-weight:600}
+.row+.row{border-top:1px solid var(--line)}
+.row:first-child{padding-top:0}.row:last-child{padding-bottom:0}
+.sw{position:relative;flex:none;width:68px;height:44px;border-radius:999px;border:1px solid var(--line);background:var(--line);transition:background .15s}
+.sw::after{content:"";position:absolute;top:50%;left:4px;width:34px;height:34px;margin-top:-17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+.sw[aria-checked="true"]{background:var(--accent);border-color:var(--accent)}
+.sw[aria-checked="true"]::after{left:28px}
+@media (prefers-reduced-motion:reduce){.sw,.sw::after{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <button class="copy" id="copy" disabled>Copy</button>
+    <button class="theme" id="theme" aria-label="Switch to dark mode">🌙</button>
+  </div>
+  <textarea id="input" rows="7" aria-label="Text to clean" placeholder="Paste text here"></textarea>
+  <textarea id="output" rows="7" aria-label="Cleaned text" readonly placeholder="Cleaned text appears here"></textarea>
+  <section aria-label="Cleaning settings">
+    <div class="row"><span id="l1">Remove dots</span><button class="sw" id="dots" role="switch" aria-checked="true" aria-labelledby="l1"></button></div>
+    <div class="row"><span id="l2">Remove hyphens</span><button class="sw" id="hyphens" role="switch" aria-checked="true" aria-labelledby="l2"></button></div>
+  </section>
+</main>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var input=$("input"),output=$("output"),copy=$("copy"),theme=$("theme"),dots=$("dots"),hyphens=$("hyphens");
+  var root=document.documentElement;
 
-(() => {
-  const params = new URLSearchParams(window.location.search);
-  const rawInset = params.get('top_inset_px');
-  const parsedInset = rawInset !== null && /^\d+$/.test(rawInset)
-    ? Number(rawInset)
-    : 0;
-  const topInset = params.get('has_top_banner') === '1'
-    ? Math.min(parsedInset, 256)
-    : 0;
-  document.documentElement.style.setProperty('--safe-area-inset-top', `${topInset}px`);
-  document.documentElement.style.setProperty('--safe-area-scroll-padding-top', `${topInset}px`);
-
-  function observeNavigation() {
-    const root = document.getElementById('root');
-    if (root === null) return;
-    const observed = new Set();
-    let scheduled = false;
-
-    function syncScrollPadding() {
-      const elements = new Set(root.querySelectorAll('[data-safe-area-sticky-top]'));
-      for (const element of observed) {
-        if (!elements.has(element)) {
-          resizeObserver.unobserve(element);
-          observed.delete(element);
-        }
-      }
-      for (const element of elements) {
-        if (!observed.has(element)) {
-          resizeObserver.observe(element);
-          observed.add(element);
-        }
-      }
-      let padding = topInset;
-      for (const element of elements) {
-        const style = window.getComputedStyle(element);
-        if (style.position !== 'sticky' && style.position !== 'fixed') continue;
-        const top = Number.parseFloat(style.top);
-        if (Number.isFinite(top)) {
-          padding = Math.max(padding, top + element.getBoundingClientRect().height);
-        }
-      }
-      document.documentElement.style.setProperty(
-        '--safe-area-scroll-padding-top', `${Math.ceil(padding)}px`,
-      );
-    }
-
-    function scheduleUpdate() {
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        scheduled = false;
-        syncScrollPadding();
-      });
-    }
-
-    const resizeObserver = new ResizeObserver(scheduleUpdate);
-    const mutationObserver = new MutationObserver(scheduleUpdate);
-    mutationObserver.observe(root, {
-      attributeFilter: ['class', 'data-safe-area-sticky-top', 'hidden', 'style'],
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-    window.addEventListener('resize', scheduleUpdate);
-    scheduleUpdate();
+  function clean(){
+    var t=input.value;
+    if(dots.getAttribute("aria-checked")==="true")t=t.replace(/\./g,"");
+    if(hyphens.getAttribute("aria-checked")==="true")t=t.replace(/[-\u2010\u2011]/g,"");
+    output.value=t;
+    copy.disabled=!t;
   }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', observeNavigation, {once: true});
-  } else {
-    observeNavigation();
-  }
-})();
-</script><script data-metaai-records-guard>// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-
-// When the records API rejects a write because the app is at its record
-// limit, this page answers the next writes itself with the same rejection.
-// The answers come after a delay, under an exponential backoff, and one probe
-// write goes to the network per backoff window. A new record that the API
-// accepts, or a delete that removes a record, ends the backoff. The backoff
-// also ends when a write comes 60 s or more after the last window, and no probe
-// from the last 60 s is in flight. The state is in memory only.
-//
-// The compiled-HTML contract checks (`stateful_crud_contract.rs` and
-// `stateful_hosted_release.rs`) read this file as part of the app. So it must
-// not contain a quoted records action, a browser storage API, the JSON request
-// header or encoder, a quoted POST method, a collection argument, or a name
-// bound to a quoted word. It must also not call a network function with a
-// quoted URL.
-(() => {
-  const nativeFetch = window.fetch;
-  if (typeof nativeFetch !== 'function') return;
-  const NativeRequest = window.Request;
-  const NativeResponse = window.Response;
-  const NativeURL = window.URL;
-  const NativePromise = window.Promise;
-  const parseJson = JSON.parse;
-  const reflectApply = Reflect.apply;
-  const startTimer = window.setTimeout.bind(window);
-  const stopTimer = window.clearTimeout.bind(window);
-  const monotonicNow = window.performance.now.bind(window.performance);
-
-  const CAPACITY_STATUS = 409;
-  const CAPACITY_BODY = '{"error":"artifact record limit reached"}';
-  const FIRST_WINDOW_MS = 1000;
-  const MAX_WINDOW_MS = 60000;
-  const LOCAL_ANSWER_DELAY_MS = 500;
-  const MAX_TRACKED_RECORDS = 2048;
-  const actionName = operation => ['records', operation].join('.');
-  const CREATE = actionName('create');
-  const PUT = actionName('put');
-  const GET = actionName('get');
-  const LIST = actionName('list');
-  const DELETE = actionName('delete');
-  const OBSERVED_ACTIONS = [CREATE, PUT, GET, LIST, DELETE];
-  const POST_METHOD = ['PO', 'ST'].join('');
-  const LOCAL_HEADERS = [
-    [['content', 'type'].join('-'), ['application', 'json'].join('/') + '; charset=utf-8'],
-    ['cache-control', 'no-store'],
-    ['x-metaai-records-guard', 'capacity'],
-  ];
-
-  // `epoch` changes when a window opens or closes. A rejected or accepted write
-  // that was sent in an earlier epoch does not change the window, so the writes
-  // that were in flight when the limit was reached count as one rejection.
-  let streak = 0;
-  let windowEndsAt = 0;
-  let epoch = 0;
-  let activeProbe = null;
-  const knownIds = new Set();
-  const knownKeys = new Map();
-
-  function recordKey(collection, value) {
-    return `${collection}\n${value}`;
-  }
-
-  function rememberId(collection, id) {
-    if (typeof id !== 'string') return;
-    const key = recordKey(collection, id);
-    knownIds.delete(key);
-    knownIds.add(key);
-    if (knownIds.size > MAX_TRACKED_RECORDS) knownIds.delete(knownIds.values().next().value);
-  }
-
-  // `savedId` is null when the outcome of the write is unknown. Then the key
-  // keeps the id that an earlier answer saved.
-  function rememberIdempotencyKey(collection, idempotencyKey, savedId) {
-    if (typeof idempotencyKey !== 'string') return;
-    const key = recordKey(collection, idempotencyKey);
-    const id = savedId ?? knownKeys.get(key) ?? null;
-    knownKeys.delete(key);
-    knownKeys.set(key, id);
-    if (knownKeys.size > MAX_TRACKED_RECORDS) knownKeys.delete(knownKeys.keys().next().value);
-  }
-
-  function forgetRecord(savedId) {
-    knownIds.delete(savedId);
-    for (const [idempotencyKey, keySavedId] of knownKeys) {
-      if (keySavedId === savedId) knownKeys.delete(idempotencyKey);
-    }
-  }
-
-  function forgetId(collection, id) {
-    if (typeof id === 'string') forgetRecord(recordKey(collection, id));
-  }
-
-  function targetsActions(input, init) {
-    const isRequest = input instanceof NativeRequest;
-    const method = init?.method ?? (isRequest ? input.method : 'GET');
-    if (String(method).toUpperCase() !== POST_METHOD) return false;
-    const base = window.location.href;
-    const url = isRequest ? input.url : String(input);
-    return new NativeURL(url, base).href === new NativeURL('actions', base).href;
-  }
-
-  // Returns the body text, a promise of it for a Request body, or null when
-  // the body cannot be JSON text.
-  function requestBody(input, init) {
-    const body = init?.body;
-    if (body !== undefined && body !== null) return typeof body === 'string' ? body : null;
-    return input instanceof NativeRequest ? input.clone().text() : null;
-  }
-
-  function requestSignal(input, init) {
-    if (init !== undefined && init !== null && init.signal !== undefined) return init.signal;
-    return input instanceof NativeRequest ? input.signal : null;
-  }
-
-  function parseAction(text) {
-    let payload;
-    try {
-      payload = parseJson(text);
-    } catch {
-      return null;
-    }
-    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null;
-    const name = payload.action;
-    if (!OBSERVED_ACTIONS.includes(name)) return null;
-    const args = payload.args ?? {};
-    if (typeof args !== 'object' || Array.isArray(args)) return null;
-    const collection = args.collection ?? 'items';
-    if (typeof collection !== 'string') return null;
-    return {name, args, collection};
-  }
-
-  function isWrite(action) {
-    return action.name === CREATE || action.name === PUT;
-  }
-
-  // The records API accepts these writes at the limit when their record
-  // exists: a create that replays a known idempotency key, and a put to a known
-  // record. A key or id is known when this page saw its record saved, or sent
-  // it in a write whose outcome is unknown.
-  function mayStillSucceed(action) {
-    if (action.name === CREATE) {
-      const idempotencyKey = action.args.idempotency_key;
-      return typeof idempotencyKey === 'string'
-        && knownKeys.has(recordKey(action.collection, idempotencyKey));
-    }
-    const id = action.args.id;
-    return typeof id === 'string' && knownIds.has(recordKey(action.collection, id));
-  }
-
-  function rememberUnknownOutcome(action) {
-    if (action.name === CREATE) {
-      rememberIdempotencyKey(action.collection, action.args.idempotency_key, null);
-    } else {
-      rememberId(action.collection, action.args.id);
-    }
-  }
-
-  // The API rejects a known key or id for capacity only when its record does
-  // not exist.
-  function revokeExemption(action) {
-    if (action.name === PUT) {
-      forgetId(action.collection, action.args.id);
-      return;
-    }
-    const key = recordKey(action.collection, action.args.idempotency_key);
-    const savedId = knownKeys.get(key);
-    knownKeys.delete(key);
-    if (typeof savedId === 'string') forgetRecord(savedId);
-  }
-
-  // A probe that never settles stops holding writes back after the longest
-  // window.
-  function windowIsOpen(time) {
-    if (time < windowEndsAt) return true;
-    return activeProbe !== null && time - activeProbe.startedAt < MAX_WINDOW_MS;
-  }
-
-  function openWindow(sentEpoch) {
-    if (sentEpoch !== epoch) return;
-    streak += 1;
-    windowEndsAt = monotonicNow() + Math.min(MAX_WINDOW_MS, FIRST_WINDOW_MS * 2 ** (streak - 1));
-    epoch += 1;
-  }
-
-  function closeWindow() {
-    if (streak === 0) return;
-    streak = 0;
-    windowEndsAt = 0;
-    activeProbe = null;
-    epoch += 1;
-  }
-
-  // The delay keeps an awaited retry loop from running on every microtask.
-  function answerLocally(signal) {
-    return new NativePromise((resolve, reject) => {
-      if (signal?.aborted) {
-        reject(signal.reason);
-        return;
-      }
-      let timer = 0;
-      const abort = () => {
-        stopTimer(timer);
-        reject(signal.reason);
-      };
-      timer = startTimer(() => {
-        signal?.removeEventListener('abort', abort);
-        resolve(new NativeResponse(CAPACITY_BODY, {status: CAPACITY_STATUS, headers: LOCAL_HEADERS}));
-      }, LOCAL_ANSWER_DELAY_MS);
-      signal?.addEventListener('abort', abort, {once: true});
+  function toggle(btn){
+    btn.addEventListener("click",function(){
+      btn.setAttribute("aria-checked",btn.getAttribute("aria-checked")==="true"?"false":"true");
+      clean();
     });
   }
+  toggle(dots);toggle(hyphens);
+  input.addEventListener("input",clean);
 
-  function responseData(text) {
-    try {
-      const payload = parseJson(text);
-      return payload !== null && typeof payload === 'object' ? payload.data : undefined;
-    } catch {
-      return undefined;
-    }
-  }
+  copy.addEventListener("click",function(){
+    var done=function(){copy.textContent="Copied";setTimeout(function(){copy.textContent="Copy"},1500)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(output.value).then(done,function(){output.select();document.execCommand("copy");done()});
+    }else{output.select();document.execCommand("copy");done()}
+  });
 
-  function track(action, data) {
-    const collection = action.collection;
-    switch (action.name) {
-      case LIST:
-        if (Array.isArray(data?.records)) {
-          for (const record of data.records) rememberId(collection, record?.id);
-        }
-        return;
-      case DELETE:
-        if (data === true) {
-          forgetId(collection, action.args.id);
-          closeWindow();
-        }
-        return;
-      case CREATE:
-        if (typeof data?.id === 'string') {
-          rememberIdempotencyKey(collection, action.args.idempotency_key, recordKey(collection, data.id));
-        }
-        rememberId(collection, data?.id);
-        return;
-      default:
-        rememberId(collection, data?.id);
-    }
+  function setTheme(t){
+    root.setAttribute("data-theme",t);
+    theme.textContent=t==="dark"?"☀️":"🌙";
+    theme.setAttribute("aria-label",t==="dark"?"Switch to light mode":"Switch to dark mode");
+    try{localStorage.setItem("theme",t)}catch(e){}
   }
+  var saved=null;
+  try{saved=localStorage.getItem("theme")}catch(e){}
+  setTheme(saved||(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+  theme.addEventListener("click",function(){setTheme(root.getAttribute("data-theme")==="dark"?"light":"dark")});
 
-  async function observe(action, response, sent) {
-    try {
-      const status = response.status;
-      const succeeded = status >= 200 && status < 300;
-      // A write that the API accepts only below the limit proves free space.
-      if (succeeded && isWrite(action) && !sent.mayStillSucceed && sent.epoch === epoch) {
-        closeWindow();
-      }
-      const capacityCandidate = status === CAPACITY_STATUS && isWrite(action);
-      if (!succeeded && !capacityCandidate) return;
-      const text = await response.clone().text();
-      if (succeeded) {
-        track(action, responseData(text));
-      } else if (text === CAPACITY_BODY) {
-        if (sent.mayStillSucceed) revokeExemption(action);
-        openWindow(sent.epoch);
-      }
-    } finally {
-      if (sent.probe !== null && activeProbe === sent.probe) activeProbe = null;
-    }
-  }
-
-  function handle(action, send, signal) {
-    if (action === null) return send();
-    const sent = {epoch, mayStillSucceed: false, probe: null};
-    if (isWrite(action)) {
-      sent.mayStillSucceed = mayStillSucceed(action);
-      if (streak > 0 && !sent.mayStillSucceed) {
-        const time = monotonicNow();
-        if (windowIsOpen(time)) return answerLocally(signal);
-        if (time - windowEndsAt < MAX_WINDOW_MS) {
-          activeProbe = {startedAt: time};
-          sent.probe = activeProbe;
-        } else {
-          // Another client or the agent can free space where this page cannot
-          // see it. So after a quiet period the write goes out as a normal write.
-          closeWindow();
-          sent.epoch = epoch;
-        }
-      }
-    }
-    return send().then(
-      response => observe(action, response, sent).then(() => response, () => response),
-      error => {
-        if (sent.probe !== null && activeProbe === sent.probe) activeProbe = null;
-        // A write that fails or is aborted after it is sent can still save its
-        // record.
-        if (isWrite(action)) rememberUnknownOutcome(action);
-        throw error;
-      },
-    );
-  }
-
-  function guardedFetch(input, init) {
-    const self = this;
-    const args = arguments;
-    const send = () => reflectApply(nativeFetch, self, args);
-    let body;
-    let signal;
-    try {
-      if (!targetsActions(input, init)) return send();
-      body = requestBody(input, init);
-      signal = requestSignal(input, init);
-    } catch {
-      return send();
-    }
-    if (body === null) return send();
-    if (typeof body === 'string') return handle(parseAction(body), send, signal);
-    return body.then(text => handle(parseAction(text), send, signal), () => send());
-  }
-
-  try {
-    window.fetch = guardedFetch;
-  } catch {
-    // A page that made the network function read-only keeps its own function.
-  }
+  clean();
 })();
-</script><script data-metaai-app-links>(()=>{var W=Object.defineProperty;var o=(t,n)=>W(t,"name",{value:n,configurable:!0});(()=>{const t=window.open,n=window.fetch,r=HTMLAnchorElement.prototype.click,i=Event.prototype.preventDefault,c=Event.prototype.stopPropagation,f=Event.prototype.stopImmediatePropagation,a=Object.getOwnPropertyDescriptor(Event.prototype,"defaultPrevented").get,u=Object.getOwnPropertyDescriptor(Event.prototype,"cancelBubble"),h="/__metaai/blobs/",x=4e3,g=new WeakMap,E=new WeakSet,s=[];let l=null,b=null,m=null,d=null;function p(t){if(typeof t!="string"||t.trim()==="")return null;let e;try{e=new URL(t,document.baseURI)}catch{return null}return(e.protocol==="http:"||e.protocol==="https:")&&e.origin===window.location.origin?e:null}o(p,"sameAppUrl");function k(t){const e=t.trim(),n=e.toLowerCase();return n===""||n==="_self"||n==="_parent"||n==="_top"?!1:![...document.getElementsByName(e)].some(t=>/^(IFRAME|OBJECT|EMBED)$/.test(t.tagName))}o(k,"opensNewContext");function T(t){return/^\/(__metaai|api|assets)\//.test(t.pathname)}o(T,"isFileRoute");function M(t){const e=new URL(window.location.href);return t.hash!==""&&!/^#!?\//.test(t.hash)&&t.pathname===e.pathname&&t.search===e.search}o(M,"samePage");function R(t){return(t.querySelector("img[alt]")?.getAttribute("alt")||t.getAttribute("aria-label")||t.textContent||"").trim().slice(0,200)}o(R,"labelFor");function y(t,e){const n=document.createElement(t);return n.style.cssText=e,n}o(y,"styled");function P(t){const e=Uint8Array.from(atob(t.replace(/-/g,"+").replace(/_/g,"/")),t=>t.charCodeAt(0));return new TextDecoder("utf-8",{fatal:!0}).decode(e)}o(P,"textOf");function S(t){let e={disposition:t.searchParams.get("disposition")};try{const n=t.searchParams.get("token");n&&t.pathname.startsWith(h)&&(e=JSON.parse(P(n.split(".")[0]))||e)}catch{}return e.disposition==="attachment"}o(S,"isAttachment");function D(){try{const t=document.querySelectorAll(":modal");return t[t.length-1]||document.body}catch{return document.body}}o(D,"layerHost");function H(t,e){d===null&&(d=y("div","position:fixed;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;"),d.setAttribute("role","status"),d.setAttribute("data-metaai-link-status","")),d.parentNode!==e&&e.append(d);const n=d;n.textContent="",window.setTimeout(()=>{n.textContent=t},100)}o(H,"announce");function N(){b?.remove();const t=D();m?.isConnected||(m=document.createElement("style"),m.textContent="[data-metaai-link-note]::backdrop{display:none!important;background:none!important;backdrop-filter:none!important}",(document.head||document.documentElement).append(m));const e="This app cannot open its pages in a new tab.",n=y("div","position:fixed;inset:auto 16px calc(var(--safe-area-inset-bottom, 0px) + 24px);z-index:2147483647;box-sizing:border-box;width:auto;height:auto;max-width:360px;margin:0 auto;padding:12px 16px;border:0;border-radius:10px;background:rgba(17,17,17,0.92);color:#fff;font:400 14px/1.4 system-ui,sans-serif;text-align:center;overflow:visible;pointer-events:none;");n.setAttribute("data-metaai-link-note",""),n.setAttribute("aria-hidden","true"),n.textContent=e;const r=typeof n.showPopover=="function";r&&n.setAttribute("popover","manual"),t.append(n),r&&n.showPopover(),b=n,H(e,t),window.setTimeout(()=>{n.remove(),b===n&&(b=null)},x)}o(N,"showNote");function O(t){for(const e of t)if(!(!(e instanceof Element)||e===document.body||!e.isConnected||typeof e.focus!="function")&&(e.focus({preventScroll:!0}),document.activeElement===e))return}o(O,"focusBack");function w(){if(l===null)return;const{root:t,opener:e,before:n}=l;l=null,t.open&&t.close(),t.remove(),O([e,n,...s.slice().reverse()])}o(w,"closeViewer");function A(t,e,n){const r=document.activeElement;w();const c=typeof HTMLDialogElement=="function"&&typeof HTMLDialogElement.prototype.showModal=="function",f="var(--safe-area-inset-top, 0px)",a=y(c?"dialog":"div",`position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;box-sizing:border-box;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;padding:calc(${f} + 68px) 16px 24px;background:rgba(0,0,0,0.88);color:#fff;overflow:hidden;overscroll-behavior:contain;pointer-events:auto;`);a.setAttribute("data-metaai-file-viewer",""),a.setAttribute("aria-label",e||"File"),c||(a.setAttribute("role","dialog"),a.setAttribute("aria-modal","true"));const u=y("button",`position:absolute;top:calc(${f} + 12px);right:12px;width:44px;height:44px;padding:0;border:0;border-radius:22px;background:rgba(255,255,255,0.18);color:#fff;font:400 28px/44px system-ui,sans-serif;cursor:pointer;pointer-events:auto;`);u.type="button",u.textContent="\xD7",u.setAttribute("aria-label","Close"),u.setAttribute("data-metaai-file-viewer-close","");const h=y("img","display:block;flex:0 1 auto;min-height:0;max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;");h.alt=e,h.addEventListener("error",()=>{const t=y("p","margin:0;font:400 15px/1.4 system-ui,sans-serif;text-align:center;");t.textContent="This file cannot be shown here.",h.replaceWith(t)},{once:!0}),h.src=t,a.append(u,h),a.addEventListener("cancel",t=>{Reflect.apply(i,t,[]),l?.root===a&&w()}),a.a
+</script>
+</body>
+</html>
